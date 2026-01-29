@@ -1,7 +1,7 @@
 from openai import OpenAI
 import json
 
-client = OpenAI ( my api key )
+client = OpenAI (api_key=" my api key ")
 
 import openai
 import json
