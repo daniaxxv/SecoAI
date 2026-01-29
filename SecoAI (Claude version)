@@ -1,0 +1,194 @@
+from openai import OpenAI
+import json
+
+client = OpenAI ( my api key )
+
+import openai
+import json
+from typing import List, Dict, Any
+import os
+
+class EcommerceClusteringAgent:
+    def __init__(self, api_key: str = None):
+        """
+        Ініціалізація агента для кластеризації користувачів
+        
+        Args:
+            api_key: API ключ OpenAI (якщо не передано, береться з environ)
+        """
+        self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+        if not self.api_key:
+            raise ValueError("Потрібен API ключ OpenAI")
+        
+        openai.api_key = self.api_key
+        
+        self.system_prompt = """Ти автономний ШІ агент, який інтегрується у різні системи
+e commerce сервісів. Ти відповідаєш за обробку даних користувачів.
+Твоя мета - кластеризовувати подібних користувачів у групи, для показу
+однакового контенту і зменшення витрат енергії на обробку даних. 
+Схема роботи: ти приймаєш вхідні дані про кожного користувача, які доступні
+у сервісі, в який ти будеш інтегрований. Це поведінкові, загальні, демографічні
+дані кожного користувача на платформі. Ти аналізуєш дані кожного, а саме: 
+перевіряєш вік, стать, місце проживання, регіон, історію покупок, кошик 
+користувача (за наявності), активність у програмі, релігію, інтереси (будь які
+доступні) та інші доступні дані. І за наданими параметрами шукаєш подібних користувачів. 
+Користувачів, які подібні між собою понад 80%, ти групуєш в один кластер (кількість кластерів 
+та кількість користувачів у кластерах необмежена), користувачам, які
+віднесені до одного кластеру показується спільний контент. Користувачів, які
+не мають подібних користувачів, треба обробляти персонально. Усі свої дії ти
+маєш транслювати у реальному часі на дашборд, до якого будеш під'єднаний. Поверни результат у форматі JSON."""
+
+    def cluster_users(self, users_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Кластеризація користувачів за допомогою GPT-4 mini
+        
+        Args:
+            users_data: Список словників з даними користувачів
+            
+        Returns:
+            Словник з результатами кластеризації у форматі JSON
+        """
+        try:
+            # Формуємо запит для GPT
+            user_message = f"""
+Проаналізуй наступних користувачів та згрупуй їх у кластери:
+
+{json.dumps(users_data, ensure_ascii=False, indent=2)}
+
+Поверни результат у форматі JSON з такою структурою:
+{{
+    "clusters": [
+        {{
+            "cluster_id": 1,
+            "user_ids": [список ID користувачів],
+            "similarity_score": відсоток подібності,
+            "common_traits": ["спільні характеристики"],
+            "recommended_content": "тип контенту для показу"
+        }}
+    ],
+    "individual_users": [
+        {{
+            "user_id": ID,
+            "reason": "причина індивідуальної обробки"
+        }}
+    ],
+    "processing_log": [
+        "крок 1: ...",
+        "крок 2: ..."
+    ]
+}}
+"""
+
+            # Виклик API OpenAI
+            response = openai.ChatCompletion.create(
+                model="gpt-4-mini",  # або "gpt-4o-mini" залежно від доступності
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.3,  # Нижча температура для більш передбачуваних результатів
+                max_tokens=4000,
+                response_format={"type": "json_object"}  # Форсуємо JSON відповідь
+            )
+            
+            # Витягуємо результат
+            result = json.loads(response.choices[0].message.content)
+            
+            return {
+                "status": "success",
+                "data": result,
+                "tokens_used": {
+                    "prompt": response.usage.prompt_tokens,
+                    "completion": response.usage.completion_tokens,
+                    "total": response.usage.total_tokens
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "data": None
+            }
+
+    def process_in_realtime(self, users_data: List[Dict[str, Any]], 
+                           dashboard_callback=None) -> Dict[str, Any]:
+        """
+        Обробка з реал-тайм трансляцією на дашборд
+        
+        Args:
+            users_data: Дані користувачів
+            dashboard_callback: Функція для відправки оновлень на дашборд
+            
+        Returns:
+            Результат кластеризації
+        """
+        if dashboard_callback:
+            dashboard_callback({"status": "processing", "message": "Початок обробки даних"})
+        
+        result = self.cluster_users(users_data)
+        
+        if dashboard_callback:
+            dashboard_callback({
+                "status": "completed" if result["status"] == "success" else "failed",
+                "message": "Обробка завершена",
+                "result": result
+            })
+        
+        return result
+
+
+# Приклад використання
+if __name__ == "__main__":
+    # Приклад даних користувачів
+    sample_users = [
+        {
+            "user_id": 1,
+            "age": 25,
+            "gender": "жінка",
+            "location": "Київ",
+            "region": "Київська область",
+            "purchase_history": ["одяг", "косметика", "книги"],
+            "cart": ["сукня", "туфлі"],
+            "activity_level": "високий",
+            "interests": ["мода", "краса", "читання"]
+        },
+        {
+            "user_id": 2,
+            "age": 27,
+            "gender": "жінка",
+            "location": "Львів",
+            "region": "Львівська область",
+            "purchase_history": ["одяг", "аксесуари", "косметика"],
+            "cart": ["сумка"],
+            "activity_level": "середній",
+            "interests": ["мода", "подорожі"]
+        },
+        {
+            "user_id": 3,
+            "age": 35,
+            "gender": "чоловік",
+            "location": "Харків",
+            "region": "Харківська область",
+            "purchase_history": ["електроніка", "гаджети"],
+            "cart": [],
+            "activity_level": "низький",
+            "interests": ["технології", "ігри"]
+        }
+    ]
+    
+    # Функція для симуляції дашборду
+    def dashboard_update(data):
+        print(f"[DASHBOARD] {json.dumps(data, ensure_ascii=False, indent=2)}")
+    
+    # Ініціалізація агента
+    # Встановіть ваш API ключ через змінну середовища OPENAI_API_KEY
+    # або передайте напряму: agent = EcommerceClusteringAgent(api_key="your-key")
+    agent = EcommerceClusteringAgent()
+    
+    # Запуск кластеризації
+    result = agent.process_in_realtime(sample_users, dashboard_callback=dashboard_update)
+    
+    # Виведення результату
+    print("\n=== РЕЗУЛЬТАТ КЛАСТЕРИЗАЦІЇ ===")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
